@@ -45,29 +45,29 @@ const connectToDatabase = () => {
         if (err) {
             console.error("❌ Error conectando a MySQL:", err);
             setTimeout(connectToDatabase, 5000);
-        } else {
-            console.log("✅ Conectado a MySQL en", process.env.DB_HOST || "sql3.freesqldatabase.com");
-        }
-    });
+          } else {
+              console.log("✅ Conectado a MySQL en", process.env.DB_HOST || "sql3.freesqldatabase.com");
+          }
+      });
 
-    db.on('error', (err) => {
-        console.error("⚠️ Error en la conexión a MySQL:", err);
-        if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-            connectToDatabase();
-        } else {
-            throw err;
-        }
-    });
-};
+      db.on('error', (err) => {
+          console.error("⚠️ Error en la conexión a MySQL:", err);
+          if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+              connectToDatabase();
+          } else {
+              throw err;
+          }
+      });
+  };
 
-connectToDatabase();
+  connectToDatabase();
 
-app.post('/register', async (req, res) => {
-    const { nombre, correo, contrasena } = req.body;
-    if (!nombre || !correo || !contrasena) {
-        return res.status(400).json({ error: "Todos los campos son obligatorios." });
-    }
-    try {
+  app.post('/register', async (req, res) => {
+      const { nombre, correo, contrasena } = req.body;
+      if (!nombre || !correo || !contrasena) {
+          return res.status(400).json({ error: "Todos los campos son obligatorios." });
+      }
+      try {
         const existingUser = await db.query('SELECT * FROM usuario WHERE correo = ?', [correo]);
         if (existingUser.length > 0) {
             return res.status(400).json({ error: "El correo ya está registrado." });
@@ -83,27 +83,54 @@ app.post('/register', async (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-    const { correo, contrasena } = req.body;
-    if (!correo || !contrasena) {
-        return res.status(400).json({ error: "Correo y contraseña son obligatorios." });
+  const { correo, contrasena } = req.body;
+  if (!correo || !contrasena) {
+    return res.status(400).json({ error: "Correo y contraseña son obligatorios." });
+  }
+  try {
+    const results = await db.query('SELECT * FROM usuario WHERE correo = ?', [correo]);
+    if (results.length === 0) {
+      return res.status(400).json({ error: "Correo o contraseña incorrectos." });
     }
-    try {
-        const results = await db.query('SELECT * FROM usuario WHERE correo = ?', [correo]);
-        if (results.length === 0) {
-            return res.status(400).json({ error: "Correo o contraseña incorrectos." });
-        }
-        const user = results[0];
-        const isMatch = await bcrypt.compare(contrasena, user.contrasena);
-        if (!isMatch) {
-            return res.status(400).json({ error: "Correo o contraseña incorrectos." });
-        }
-        const token = jwt.sign({ id_usuario: user.id_usuario, correo: user.correo, rol: user.nombre_rol }, process.env.JWT_SECRET || "secreto", { expiresIn: '1h' });
-        res.json({ message: "✅ Inicio de sesión exitoso", token, usuario: user });
-    } catch (error) {
-        console.error("🚨 Error en el login:", error);
-        res.status(500).json({ error: "Error interno del servidor" });
+    const user = results[0];
+
+    if (user.is_logged_in === 1) {
+      return res.status(403).json({ error: "Ya hay una sesión activa para este usuario." });
     }
+
+    const isMatch = await bcrypt.compare(contrasena, user.contrasena);
+    if (!isMatch) {
+      return res.status(400).json({ error: "Correo o contraseña incorrectos." });
+    }
+
+    const token = jwt.sign(
+      { id_usuario: user.id_usuario, correo: user.correo, rol: user.nombre_rol },
+      process.env.JWT_SECRET || "secreto",
+      { expiresIn: '1h' }
+    );
+
+    await db.query('UPDATE usuario SET is_logged_in = 1 WHERE id_usuario = ?', [user.id_usuario]);
+
+    res.json({ message: "✅ Inicio de sesión exitoso", token, usuario: user });
+  } catch (error) {
+    console.error("🚨 Error en el login:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
+  }
 });
+
+app.post("/logout", async (req, res) => {
+  const { id_usuario } = req.body;
+  if (!id_usuario) return res.status(400).json({ error: "Falta id_usuario" });
+
+  try {
+    await db.query("UPDATE usuario SET is_logged_in = 0 WHERE id_usuario = ?", [id_usuario]);
+    res.status(200).json({ message: "✅ Sesión cerrada correctamente" });
+  } catch (error) {
+    console.error("❌ Error al cerrar sesión:", error);
+    res.status(500).json({ error: "Error cerrando sesión" });
+  }
+});
+
 
 // 🔐 Guardar o iniciar sesión con Google
 // 🧠 Iniciar sesión con Google o registrar nuevo usuario
@@ -352,6 +379,7 @@ app.get('/facturas-productos/:id_usuario', async (req, res) => {
   // 👥 Obtener todos los usuarios (para gestión)
 app.get('/usuarios', async (req, res) => {
     try {
+
       const usuarios = await db.query(
         'SELECT id_usuario, nombre, correo, nombre_rol, estatus FROM usuario'
       );
