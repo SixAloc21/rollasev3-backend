@@ -16,11 +16,16 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const corsOptions = {
-    origin: ["http://localhost:3000"],
-    methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
+  origin: [
+    "http://localhost:3000",
+    "https://rollease-zeta.vercel.app", // ← frontend vercel dominio 1
+    "https://rollease-h8t1rvsfc-gael-nunezs-projects.vercel.app" // ← otro dominio (proyecto o vista previa)
+  ],
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
 };
+
 app.use(cors(corsOptions));
 app.use(express.json());
 
